@@ -35,6 +35,8 @@ uvicorn app.main:app --reload
 OCR needs the Tesseract binary. Install the Windows build from <https://github.com/UB-Mannheim/tesseract/wiki>
 (or `winget install UB-Mannheim.TesseractOCR`). The backend auto-detects `C:\Program Files\Tesseract-OCR\tesseract.exe`
 even when it is not on `PATH`; for a custom location set `TESSERACT_CMD` (see `.env.example`).
+The default OCR languages are English + Hindi + Tamil (`eng+hin+tam`). Download `hin.traineddata` and `tam.traineddata` into `C:\Program Files\Tesseract-OCR\tessdata`.
+If a language pack is missing, the backend logs a warning and falls back to the installed languages. Set `PARSE_OCR_LANGS` to customize the language combination.
 Without Tesseract the API still runs, but scanned pages report an OCR-unavailable error and the OCR tests fail.
 
 ## Frontend

@@ -10,6 +10,7 @@ for _d in (UPLOAD_DIR, PROCESSED_DIR):
 MAX_UPLOAD_MB = int(os.getenv("PARSE_MAX_UPLOAD_MB", "50"))
 OCR_DPI = int(os.getenv("PARSE_OCR_DPI", "200"))
 OCR_ENGINE = os.getenv("PARSE_OCR_ENGINE", "auto")  # auto | paddle | tesseract
+OCR_LANGS = os.getenv("PARSE_OCR_LANGS", "eng+hin+tam")  # Tesseract language codes; missing packs are skipped automatically
 MIN_TEXT_CHARS = int(os.getenv("PARSE_MIN_TEXT_CHARS", "25"))  # below this a page is treated as scanned
 REVIEW_THRESHOLD = float(os.getenv("PARSE_REVIEW_THRESHOLD", "0.6"))
 HIGH_THRESHOLD = float(os.getenv("PARSE_HIGH_THRESHOLD", "0.85"))

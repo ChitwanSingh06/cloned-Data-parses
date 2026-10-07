@@ -35,7 +35,7 @@ Every backend/frontend file was a ~1-line stub (≈10 KB total): no extraction, 
 ## Update: handwriting HTR, chart extraction, equations (this iteration)
 | Area | State | Where |
 |---|---|---|
-| Printed OCR (Tesseract/Paddle) + Windows `tesseract.exe` lookup (`TESSERACT_CMD` → PATH → Program Files → Program Files (x86)) | done, tested | `ocr_engine.py`, `utils/platform_utils.py` |
+| Printed OCR (Tesseract/Paddle) with English/Hindi/Tamil support + Windows `tesseract.exe` lookup (`TESSERACT_CMD` → PATH → Program Files → Program Files (x86)) | done, tested | `ocr_engine.py`, `utils/platform_utils.py` |
 | Printed-vs-handwriting routing (baseline jitter + stroke-width variation **and** weak OCR confidence; confident printed lines are never re-routed) | done, tested on synthetic strokes | `ocr/handwriting.py` |
 | Local HTR (TrOCR via torch+transformers, optional, `requirements-htr.txt`, `PARSE_HTR=auto|off`) | wired + tested with a mocked recognizer; **real TrOCR not run here (model not installed)** | `ocr/htr_engine.py`, `detector._ocr_regions` |
 | HTR/OCR failure or no model | line/region kept and flagged `REVIEW_REQUIRED` with `review_reason`; unreadable handwriting blobs preserved as images; OCR engine failure preserves the whole page image | `detector.py` |
