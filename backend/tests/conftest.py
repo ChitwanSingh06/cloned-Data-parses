@@ -28,7 +28,8 @@ def pdfs(tmp_path_factory):
     (d / "corrupt.pdf").write_bytes(b"%PDF-1.4\nthis is not really a pdf\n")
     (d / "notpdf.pdf").write_bytes(b"hello world")
     (d / "sheet.xlsx").write_bytes(b"PK\x03\x04")
-    out.update(corrupt=d / "corrupt.pdf", notpdf=d / "notpdf.pdf", xlsx=d / "sheet.xlsx")
+    (d / "unsupported.txt").write_text("not supported", encoding="utf-8")
+    out.update(corrupt=d / "corrupt.pdf", notpdf=d / "notpdf.pdf", xlsx=d / "sheet.xlsx", unsupported=d / "unsupported.txt")
     return out
 
 

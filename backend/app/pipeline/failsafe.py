@@ -4,6 +4,7 @@ from typing import Any, Optional
 ERROR_CODES = {
     "UNSUPPORTED_FORMAT": "The input format is not supported.",
     "CORRUPT_PDF": "The PDF could not be opened or is corrupt.",
+    "CORRUPT_DOCX": "The DOCX could not be opened or is corrupt.",
     "ENCRYPTED_PDF": "The PDF is password-protected.",
     "FILE_TOO_LARGE": "The file exceeds the configured size limit.",
     "OCR_FAILURE": "OCR failed for a page.",
@@ -14,7 +15,7 @@ ERROR_CODES = {
     "READING_ORDER_AMBIGUITY": "Reading order on this page is ambiguous.",
     "PARSING_FAILED": "Document parsing failed.",
 }
-FAILURE_CODES = {"UNSUPPORTED_FORMAT", "CORRUPT_PDF", "ENCRYPTED_PDF", "FILE_TOO_LARGE", "OCR_FAILURE",
+FAILURE_CODES = {"UNSUPPORTED_FORMAT", "CORRUPT_PDF", "CORRUPT_DOCX", "ENCRYPTED_PDF", "FILE_TOO_LARGE", "OCR_FAILURE",
                  "LAYOUT_DETECTION_FAILURE", "TABLE_EXTRACTION_FAILURE", "FORMULA_EXTRACTION_FAILURE", "PARSING_FAILED"}
 
 

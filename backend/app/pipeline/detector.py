@@ -18,6 +18,7 @@ from app.extractors.ocr.ocr_engine import OCRUnavailable, extract_ocr
 from app.extractors.tables.table_detector import detect_tables_image, detect_tables_pdf
 from app.extractors.text.pdf_text import build_paragraphs, classify, estimate_body_size, page_lines
 from app.pipeline.failsafe import make_error
+from app.pipeline.timing import optional_stage
 from app.utils.bbox import bbox_area, overlap_ratio, round_bbox
 from app.utils.file_utils import is_pdf_bytes, is_supported
 
@@ -86,12 +87,13 @@ def _region(page_no: int, n: int, rtype: str, bbox, conf: float, **kw) -> dict:
             "confidence": conf, **kw}
 
 
-def _digital_regions(page, page_no: int, body: float, errors: list[dict]) -> list[dict]:
+def _digital_regions(page, page_no: int, body: float, errors: list[dict], timer=None) -> list[dict]:
     W, H = page.rect.width, page.rect.height
     regions: list[dict] = []
     tables: list[dict] = []
     try:
-        tables = detect_tables_pdf(page)
+        with optional_stage(timer, "table_extraction"):
+            tables = detect_tables_pdf(page)
     except Exception as exc:
         errors.append(make_error("TABLE_EXTRACTION_FAILURE", f"Table detection failed: {exc}", page=page_no))
     table_boxes = [t["bbox"] for t in tables]
@@ -146,7 +148,7 @@ def _digital_regions(page, page_no: int, body: float, errors: list[dict]) -> lis
     return regions
 
 
-def _ocr_regions(page, page_no: int, errors: list[dict]) -> list[dict]:
+def _ocr_regions(page, page_no: int, errors: list[dict], timer=None) -> list[dict]:
     W, H = page.rect.width, page.rect.height
     scale = 72.0 / OCR_DPI
     pix = page.get_pixmap(dpi=OCR_DPI, colorspace=pymupdf.csGRAY)
@@ -155,20 +157,23 @@ def _ocr_regions(page, page_no: int, errors: list[dict]) -> list[dict]:
     gray = np.array(img)
     pre = preprocess_image(img)
     try:
-        lines, engine = extract_ocr(pre)
+        with optional_stage(timer, "ocr"):
+            lines, engine = extract_ocr(pre)
     except Exception as exc:  # OCRUnavailable or engine crash: keep the page image and flag it
         msg = str(exc) if isinstance(exc, OCRUnavailable) else f"OCR failed: {exc}"
         errors.append(make_error("OCR_FAILURE", msg, page=page_no))
         return [_region(page_no, 1, "figure", [0.0, 0.0, W, H], 0.3, source="ocr-failed", embedded_text=[], n_paths=0,
                         review_reason=f"Page could not be OCR'd ({msg}); original page preserved.")]
     try:
-        lines = handwriting.refine_lines(lines, gray)
+        with optional_stage(timer, "ocr"):
+            lines = handwriting.refine_lines(lines, gray)
     except Exception as exc:
         log.warning("handwriting routing skipped on page %s: %s", page_no, exc)
     regions: list[dict] = []
     tables = []
     try:
-        tables = detect_tables_image(gray, scale)
+        with optional_stage(timer, "table_extraction"):
+            tables = detect_tables_image(gray, scale)
     except Exception as exc:
         errors.append(make_error("TABLE_EXTRACTION_FAILURE", f"Raster table detection failed: {exc}", page=page_no))
     table_boxes = [t["bbox"] for t in tables]
@@ -250,38 +255,42 @@ def _ocr_regions(page, page_no: int, errors: list[dict]) -> list[dict]:
     return regions
 
 
-def detect_document(path: str, size_limit_mb: int | None = None) -> dict:
+def detect_document(path: str, size_limit_mb: int | None = None, timer=None) -> dict:
     result: dict[str, Any] = {"path": path, "format": Path(path).suffix.lstrip(".").lower(), "pages": [], "regions": [], "errors": []}
     if size_limit_mb and os.path.exists(path) and os.path.getsize(path) > size_limit_mb * 1024 * 1024:
         result["errors"].append(make_error("FILE_TOO_LARGE"))
         return result
-    doc, errs = open_pdf(path)
+    with optional_stage(timer, "ingestion"):
+        doc, errs = open_pdf(path)
     result["errors"].extend(errs)
     if doc is None:
         return result
     try:
         infos, line_cache = [], {}
         for i, page in enumerate(doc, start=1):
-            try:
-                lines = page_lines(page)
-                chars = sum(len(l["text"]) for l in lines)
-                text = " ".join(l["text"] for l in lines)
-                cov = _image_coverage(page)
-                scanned = chars < MIN_TEXT_CHARS or _garbled(text) or (cov >= 0.8 and chars < 150)
-                line_cache[i] = lines
-            except Exception as exc:
-                result["errors"].append(make_error("LAYOUT_DETECTION_FAILURE", f"Page analysis failed: {exc}", page=i))
-                chars, scanned, cov = 0, True, 0.0
-            infos.append({"page_number": i, "width": round(page.rect.width, 2), "height": round(page.rect.height, 2),
-                          "is_scanned": scanned, "text_chars": chars, "image_coverage": round(cov, 2),
-                          "source": "ocr" if scanned else "digital"})
+            with optional_stage(timer, "ingestion"):
+                try:
+                    lines = page_lines(page)
+                    chars = sum(len(l["text"]) for l in lines)
+                    text = " ".join(l["text"] for l in lines)
+                    cov = _image_coverage(page)
+                    scanned = chars < MIN_TEXT_CHARS or _garbled(text) or (cov >= 0.8 and chars < 150)
+                    line_cache[i] = lines
+                except Exception as exc:
+                    result["errors"].append(make_error("LAYOUT_DETECTION_FAILURE", f"Page analysis failed: {exc}", page=i))
+                    chars, scanned, cov = 0, True, 0.0
+                infos.append({"page_number": i, "width": round(page.rect.width, 2), "height": round(page.rect.height, 2),
+                              "is_scanned": scanned, "text_chars": chars, "image_coverage": round(cov, 2),
+                              "source": "ocr" if scanned else "digital"})
         result["pages"] = infos
         body = estimate_body_size([l for i, ls in line_cache.items() if not infos[i - 1]["is_scanned"] for l in ls])
         result["body_size"] = body
         for info in infos:
             i, page = info["page_number"], doc[info["page_number"] - 1]
             try:
-                regs = _ocr_regions(page, i, result["errors"]) if info["is_scanned"] else _digital_regions(page, i, body, result["errors"])
+                with optional_stage(timer, "layout_analysis"):  # OCR / table time nested inside is excluded from this stage
+                    regs = (_ocr_regions(page, i, result["errors"], timer) if info["is_scanned"]
+                            else _digital_regions(page, i, body, result["errors"], timer))
                 result["regions"].extend(regs)
             except Exception as exc:
                 log.exception("page %s failed", i)

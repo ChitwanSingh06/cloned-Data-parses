@@ -11,6 +11,7 @@ from app.extractors.figures.figure_extractor import extract_figure, save_crop
 from app.extractors.tables.table_extractor import extract_table
 from app.models.block import Block, BlockType
 from app.pipeline.failsafe import make_error
+from app.pipeline.timing import optional_stage
 
 log = logging.getLogger("parse-anything")
 
@@ -26,7 +27,7 @@ def _text_block(r: dict) -> Block:
                  signals=dict(r.get("signals", {})))
 
 
-def route_blocks(detected: dict, out_dir: Optional[Path] = None) -> dict:
+def route_blocks(detected: dict, out_dir: Optional[Path] = None, timer=None) -> dict:
     blocks: list[Block] = []
     errors: list[dict] = list(detected.get("errors", []))
     doc = None
@@ -41,7 +42,8 @@ def route_blocks(detected: dict, out_dir: Optional[Path] = None) -> dict:
                     blocks.append(_text_block(r))
                 elif r["type"] == "table":
                     try:
-                        res = extract_table(r, words=r.get("words"))
+                        with optional_stage(timer, "table_extraction"):
+                            res = extract_table(r, words=r.get("words"))
                         blocks.append(Block(id=rid, type=BlockType.table, content=res["table"].model_dump(), page=r["page"],
                                             bbox=r["bbox"], extractor=f"table:{r.get('strategy')}", signals=res["signals"],
                                             meta={**res["meta"], "region_id": rid}))

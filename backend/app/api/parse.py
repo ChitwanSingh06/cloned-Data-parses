@@ -66,6 +66,8 @@ def page_image(doc_id: str, page: int, dpi: int = 110):
     path = jobs.upload_path(doc_id)
     if path is None:
         raise HTTPException(404, detail="Source not found")
+    if path.suffix.lower() != ".pdf":
+        raise HTTPException(404, detail="Source page viewer is only available for PDF documents")
     try:
         with pymupdf.open(str(path)) as pdf:
             if not 1 <= page <= pdf.page_count:

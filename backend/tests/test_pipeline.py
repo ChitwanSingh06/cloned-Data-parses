@@ -87,7 +87,7 @@ def test_cross_page_paragraph_and_table_merge(parsed):
 
 
 def test_failsafe_corrupt_unsupported(pdfs):
-    for key, code in (("corrupt", "CORRUPT_PDF"), ("notpdf", "CORRUPT_PDF"), ("xlsx", "UNSUPPORTED_FORMAT")):
+    for key, code in (("corrupt", "CORRUPT_PDF"), ("notpdf", "CORRUPT_PDF"), ("unsupported", "UNSUPPORTED_FORMAT")):
         doc = parse_pdf(str(pdfs[key]))
         assert doc.status == "FAILED" and doc.errors[0]["code"] == code
         assert doc.processing_time < 60

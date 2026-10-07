@@ -49,13 +49,13 @@ def get_status(doc_id: str) -> Optional[dict]:
 
 
 def run_job(doc_id: str, path: Path, filename: str) -> None:
-    from app.pipeline.orchestrator import parse_pdf
+    from app.pipeline.orchestrator import parse_document
     t0 = time.time()
     set_status(doc_id, status="PROCESSING", filename=filename, started=t0)
     try:
-        doc = parse_pdf(str(path), document_id=doc_id, filename=filename)
+        doc = parse_document(str(path), document_id=doc_id, filename=filename)
         set_status(doc_id, status=doc.status, finished=time.time(), processing_time=doc.processing_time,
-                   page_count=doc.page_count, errors=[e for e in doc.errors if e["severity"] == "error"][:5])
+                   page_count=doc.page_count, timing=doc.timing, errors=[e for e in doc.errors if e["severity"] == "error"][:5])
     except Exception as exc:  # parse_pdf already guards; belt and braces
         set_status(doc_id, status="FAILED", finished=time.time(), errors=[{"code": "PARSING_FAILED", "message": str(exc)}])
 

@@ -48,3 +48,10 @@ export async function waitForCompletion(id, onStatus, intervalMs = 800) {
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }
+
+export async function searchDocument(documentId, query, limit = 200) {
+  return json(await fetch(`${API_BASE}/search`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ document_id: documentId, query, limit }),
+  }), "Search failed");
+}

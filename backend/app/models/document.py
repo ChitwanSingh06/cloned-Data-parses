@@ -24,6 +24,7 @@ class Page(BaseModel):
 class Document(BaseModel):
     document_id: str
     filename: str
+    format: str = "pdf"
     page_count: int = 0
     processing_time: float = 0.0
     status: str = "SUCCESS"  # SUCCESS | PARTIAL_SUCCESS | FAILED
@@ -31,3 +32,5 @@ class Document(BaseModel):
     blocks: list[Block] = Field(default_factory=list)  # global reading order
     errors: list[dict[str, Any]] = Field(default_factory=list)
     stats: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)  # extractive summary built from the blocks above (summary/summarizer.py)
+    timing: dict[str, Any] = Field(default_factory=dict)  # measured via perf_counter: totals, throughput, per-stage seconds

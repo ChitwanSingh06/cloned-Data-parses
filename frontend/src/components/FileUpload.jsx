@@ -24,7 +24,7 @@ export default function FileUpload({ onDone }) {
   return (
     <section className="card">
       <h2>Upload Document</h2>
-      <input type="file" accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+      <input type="file" accept=".pdf,.docx,.pptx,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setFile(e.target.files?.[0] || null)} />
       {file && <p>Selected: {file.name}</p>}
       <button disabled={!file || ["UPLOADING", "QUEUED", "PROCESSING"].includes(status)} onClick={run}>Parse Document</button>
       <ProcessingStatus status={status} error={error} />

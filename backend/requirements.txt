@@ -1,6 +1,9 @@
 fastapi
 uvicorn[standard]
 python-multipart
+python-docx
+python-pptx
+openpyxl
 pydantic>=2
 PyMuPDF>=1.24
 Pillow
