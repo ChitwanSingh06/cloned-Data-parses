@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Home from "./pages/Home";
 import Results from "./pages/Results";
 import Documents from "./pages/Documents";
+import Terminal from "./cli/Terminal";
 
 const NAV = [["dashboard", "Dashboard"], ["documents", "Documents"], ["history", "History"]];
 
@@ -35,6 +36,7 @@ export default function App() {
           <Documents mode={view} onOpen={open} />
         )}
       </main>
+      <Terminal docId={docId} onOpenDoc={open} />
     </div>
   );
 }
