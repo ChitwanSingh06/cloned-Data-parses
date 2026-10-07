@@ -18,7 +18,6 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.text import PP_ALIGN
 from pptx.oxml.ns import qn
-from pptx.shapes.picture import Picture  # PlaceholderPicture subclasses Picture
 
 from app.core.config import PROCESSED_DIR
 from app.models.block import Block, BlockType
@@ -34,9 +33,6 @@ from app.summary.summarizer import build_summary
 from app.utils.platform_utils import peak_memory_mb
 
 EMU_PER_POINT = 12700.0
-OCR_MIN_PIXELS = 24          # ignore icons / bullets smaller than this
-OCR_MIN_LONG_SIDE = 2000     # upscale small slide images so OCR (especially Devanagari) has enough detail
-OCR_MIN_WORD_CONF = 0.25
 
 
 def _pt(value: int | float | None) -> float:
@@ -116,12 +112,12 @@ def _is_subtitle_shape(shape) -> bool:
         return False
 
 
-def _text_blocks(shape, slide_number: int, shape_index: int, block_counter: list[int], bbox=None) -> list[Block]:
+def _text_blocks(shape, slide_number: int, shape_index: int, block_counter: list[int]) -> list[Block]:
     paragraphs = [p for p in shape.text_frame.paragraphs if p.text.strip()]
     if not paragraphs:
         return []
     meta_base = _shape_meta(shape, slide_number, shape_index)
-    bbox = bbox or _shape_bbox(shape)
+    bbox = _shape_bbox(shape)
     blocks: list[Block] = []
     pending: Block | None = None
 
@@ -168,7 +164,7 @@ def _text_blocks(shape, slide_number: int, shape_index: int, block_counter: list
     return blocks
 
 
-def _table_block(shape, slide_number: int, shape_index: int, block_counter: list[int], bbox=None) -> Block:
+def _table_block(shape, slide_number: int, shape_index: int, block_counter: list[int]) -> Block:
     table = shape.table
     n_rows, n_cols = len(table.rows), len(table.columns)
     cells: list[Cell] = []
@@ -188,7 +184,7 @@ def _table_block(shape, slide_number: int, shape_index: int, block_counter: list
     block_counter[0] += 1
     return Block(
         id=f"PX{block_counter[0]:04d}", type=BlockType.table, content=data.model_dump(),
-        page=slide_number, bbox=bbox or _shape_bbox(shape), extractor="python-pptx:table",
+        page=slide_number, bbox=_shape_bbox(shape), extractor="python-pptx:table",
         meta={**_shape_meta(shape, slide_number, shape_index), "table_index": shape_index},
         signals={"table_structure": 0.98 if n_rows and n_cols else 0.4},
     )
@@ -214,146 +210,39 @@ def _save_picture(shape, out_dir: Path, slide_number: int, shape_index: int, ima
         return None, meta
 
 
-def _is_picture(shape) -> bool:
-    """Plain pictures and picture placeholders (which report shape_type PLACEHOLDER)."""
-    return isinstance(shape, Picture) or getattr(shape, "shape_type", None) == MSO_SHAPE_TYPE.PICTURE
-
-
-def _flatten_shapes(shapes, tx=None):
-    """Yield (shape, bbox_pt) for every shape, recursing into groups and mapping child coordinates to slide space.
-
-    tx = (ox, oy, sx, sy): x_slide = ox + x * sx. Group children live in the group's child coordinate space.
-    """
-    for shape in shapes:
-        try:
-            l, t, w, h = shape.left, shape.top, shape.width, shape.height
-            if None in (l, t, w, h):
-                raise ValueError("no geometry")
-            if tx:
-                ox, oy, sx, sy = tx
-                l, t, w, h = ox + l * sx, oy + t * sy, w * sx, h * sy
-            bbox = [round(l / EMU_PER_POINT, 2), round(t / EMU_PER_POINT, 2), round((l + w) / EMU_PER_POINT, 2), round((t + h) / EMU_PER_POINT, 2)]
-        except Exception:
-            bbox = None
-        if getattr(shape, "shape_type", None) == MSO_SHAPE_TYPE.GROUP:
-            try:
-                xfrm = shape._element.grpSpPr.xfrm
-                gl, gt, gw, gh = (shape.left, shape.top, shape.width, shape.height)
-                cl, ct, cw, ch = xfrm.chOff.x, xfrm.chOff.y, xfrm.chExt.cx, xfrm.chExt.cy
-                sx, sy = (gw / cw if cw else 1.0), (gh / ch if ch else 1.0)
-                base = (0.0, 0.0, 1.0, 1.0) if not tx else tx
-                # child -> group-local slide coords -> outer transform
-                gx, gy = gl + (-cl) * sx, gt + (-ct) * sy
-                if tx:
-                    gx, gy = base[0] + gx * base[2], base[1] + gy * base[3]
-                    sx, sy = sx * base[2], sy * base[3]
-                inner = (gx, gy, sx, sy)
-            except Exception:
-                inner = tx
-            yield from _flatten_shapes(shape.shapes, inner)
-            continue
-        yield shape, bbox
-
-
-def _ocr_picture(img: Image.Image, shape_bbox: list[float] | None, slide_number: int, shape_index: int,
-                 block_counter: list[int]) -> list[Block]:
-    """OCR an embedded picture (English + Hindi) and return text blocks positioned in slide coordinates."""
-    from app.extractors.ocr.image_preprocessor import preprocess_image
-    from app.extractors.ocr.ocr_engine import extract_ocr
-
-    if img.width < OCR_MIN_PIXELS or img.height < OCR_MIN_PIXELS:
-        return []
-    rgb = Image.new("RGB", img.size, "white")
-    rgb.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[-1])
-    long_side = max(rgb.size)
-    if long_side < OCR_MIN_LONG_SIDE:
-        f = OCR_MIN_LONG_SIDE / long_side
-        rgb = rgb.resize((int(rgb.width * f), int(rgb.height * f)), Image.LANCZOS)
-    lines, engine = extract_ocr(preprocess_image(rgb))
-    lines = [ln for ln in lines if ln["text"].strip() and ln["confidence"] >= OCR_MIN_WORD_CONF]
-    if not lines:
-        return []
-    W, H = rgb.size
-    x0, y0, x1, y1 = shape_bbox or [0.0, 0.0, float(W), float(H)]
-
-    def to_slide(b):
-        return [round(x0 + b[0] / W * (x1 - x0), 2), round(y0 + b[1] / H * (y1 - y0), 2),
-                round(x0 + b[2] / W * (x1 - x0), 2), round(y0 + b[3] / H * (y1 - y0), 2)]
-
-    heights = sorted(ln["height"] for ln in lines)
-    median_h = heights[len(heights) // 2] or 1
-    paragraphs: dict[tuple, list[dict]] = {}
-    for ln in lines:
-        paragraphs.setdefault((ln["block"], ln["par"]), []).append(ln)
-    blocks: list[Block] = []
-    for pi, group in enumerate(sorted(paragraphs.values(), key=lambda g: (min(l["bbox"][1] for l in g), min(l["bbox"][0] for l in g)))):
-        text = " ".join(l["text"] for l in sorted(group, key=lambda l: l["bbox"][1])).strip()
-        bb = [min(l["bbox"][0] for l in group), min(l["bbox"][1] for l in group),
-              max(l["bbox"][2] for l in group), max(l["bbox"][3] for l in group)]
-        conf = round(sum(l["confidence"] for l in group) / len(group), 3)
-        heading = len(group) == 1 and group[0]["height"] >= 1.6 * median_h and len(text) <= 120
-        block_counter[0] += 1
-        blocks.append(Block(
-            id=f"PX{block_counter[0]:04d}", type=BlockType.heading if heading else BlockType.paragraph, content=text,
-            page=slide_number, bbox=to_slide(bb), extractor=f"ocr:{engine}", level=2 if heading else None,
-            meta={**{"source_type": "pptx", "slide_number": slide_number, "shape_index": shape_index,
-                     "region_id": f"PX{slide_number:03d}_{shape_index:03d}_ocr{pi}"},
-                  "paragraph_index": pi, "slide_region": "image_text", "text_kind": "printed", "ocr_engine": engine,
-                  "ocr_languages": "eng+hin"},
-            signals={"ocr": conf, "classification": 0.8 if heading else 0.85},
-        ))
-    return blocks
-
-
 def _extract_slide(slide, slide_number: int, slide_width: int, slide_height: int, out_dir: Path, block_counter: list[int], image_counter: list[int]) -> tuple[Page, list[Block], list[dict[str, Any]]]:
     blocks: list[Block] = []
     errors: list[dict[str, Any]] = []
     page_blocks: list[str] = []
     text_chars = 0
-    native_chars = 0
-    ocr_chars = 0
 
     # PowerPoint shape order is the document's native shape order. This preserves
     # authored order without pretending we can reconstruct a PDF-style reading order.
-    for shape_index, (shape, bbox) in enumerate(_flatten_shapes(slide.shapes)):
+    for shape_index, shape in enumerate(slide.shapes):
         try:
-            if getattr(shape, "has_table", False) or shape.shape_type == MSO_SHAPE_TYPE.TABLE:
-                block = _table_block(shape, slide_number, shape_index, block_counter, bbox)
+            if shape.shape_type == MSO_SHAPE_TYPE.TABLE:
+                block = _table_block(shape, slide_number, shape_index, block_counter)
                 blocks.append(block)
                 page_blocks.append(block.id)
                 continue
 
-            if _is_picture(shape):
+            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                 image_counter[0] += 1
                 path, meta = _save_picture(shape, out_dir, slide_number, shape_index, image_counter[0])
                 block_counter[0] += 1
                 block = Block(
                     id=f"PX{block_counter[0]:04d}", type=BlockType.figure, content="",
-                    page=slide_number, bbox=bbox, extractor="python-pptx:image",
+                    page=slide_number, bbox=_shape_bbox(shape), extractor="python-pptx:image",
                     meta=meta, signals={"image_extraction": 0.97 if path else 0.6},
                 )
                 blocks.append(block)
                 page_blocks.append(block.id)
-                # Text inside the picture (e.g. a slide pasted/exported as an image): OCR it, English + Hindi.
-                if path:
-                    try:
-                        with Image.open(out_dir / path) as im:
-                            im.load()
-                            ocr_blocks = _ocr_picture(im, bbox, slide_number, shape_index, block_counter)
-                        for ob in ocr_blocks:
-                            text_chars += len(str(ob.content))
-                            ocr_chars += len(str(ob.content))
-                            blocks.append(ob)
-                            page_blocks.append(ob.id)
-                    except Exception as exc:
-                        errors.append(make_error("OCR_FAILURE", f"Slide {slide_number}, image {shape_index}: {exc}", page=slide_number, severity="warning"))
                 continue
 
             if getattr(shape, "has_text_frame", False):
-                text_blocks = _text_blocks(shape, slide_number, shape_index, block_counter, bbox)
+                text_blocks = _text_blocks(shape, slide_number, shape_index, block_counter)
                 for block in text_blocks:
                     text_chars += len(str(block.content)) if block.type != BlockType.list else sum(len(x) for x in block.content["items"])
-                    native_chars += len(str(block.content)) if block.type != BlockType.list else sum(len(x) for x in block.content["items"])
                     blocks.append(block)
                     page_blocks.append(block.id)
         except Exception as exc:
@@ -363,7 +252,7 @@ def _extract_slide(slide, slide_number: int, slide_width: int, slide_height: int
         page_number=slide_number,
         width=_pt(slide_width),
         height=_pt(slide_height),
-        is_scanned=False, text_chars=text_chars, source="ocr" if ocr_chars and not native_chars else "digital", blocks=page_blocks,
+        is_scanned=False, text_chars=text_chars, source="digital", blocks=page_blocks,
     )
     return page, blocks, errors
 
