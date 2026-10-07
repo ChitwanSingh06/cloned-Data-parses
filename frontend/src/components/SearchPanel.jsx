@@ -25,8 +25,8 @@ export default function SearchPanel({ docId, selectedId, onSelect }) {
     <div className="search">
       <form onSubmit={run} className="search-form">
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search document..." aria-label="Search document" />
-        <button type="submit" disabled={busy || !query.trim()}>{busy ? "Searching…" : "Search"}</button>
-        {(res || error) && <button type="button" onClick={clear}>Clear</button>}
+        <button type="submit" className="btn primary small-btn" disabled={busy || !query.trim()}>{busy ? "Searching…" : "Search"}</button>
+        {(res || error) && <button type="button" className="btn small-btn" onClick={clear}>Clear</button>}
       </form>
       {error && <p className="status error small">{error}</p>}
       {res && res.total_matches === 0 && <p className="small">{res.message || "No matches."}</p>}

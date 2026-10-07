@@ -17,7 +17,7 @@ export default function MarkdownViewer({ markdown, docId }) {
   };
   return (
     <div>
-      <button onClick={() => setRaw(!raw)}>{raw ? "Show rendered" : "Show raw Markdown"}</button>
+      <button className="btn small-btn" onClick={() => setRaw(!raw)}>{raw ? "Show rendered" : "Show raw Markdown"}</button>
       {raw ? (
         <OutputViewer output={markdown} />
       ) : (
