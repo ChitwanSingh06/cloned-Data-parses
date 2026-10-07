@@ -143,6 +143,12 @@ function XlsxViewer({ doc, selected }) {
           </tbody></table>
         </div>
       ) : <p className="small">No populated worksheet cells.</p>}
+      {doc.blocks.filter((b) => b.page === sheetIndex && b.type === "figure" && b.meta?.image_path).map((b) => (
+        <figure key={b.id} className={`sheet-image ${b.id === selected?.id ? "selected" : ""}`}>
+          <img className="source-image" alt={`Image ${b.meta.image_index ?? ""}`} src={figureUrl(doc.document_id, String(b.meta.image_path).split(/[\\/]/).pop())} />
+          <figcaption className="small">Image {b.meta.image_index}{b.meta.anchor_cell ? ` · anchored at ${b.meta.anchor_cell}` : ""}</figcaption>
+        </figure>
+      ))}
       {selected && <p className="small">{formatLabel(selected, "xlsx")} · source selection</p>}
     </div>
   );
@@ -184,7 +190,7 @@ function DocxViewer({ doc, selected }) {
               <div className="small">Table {s.table_index ?? "—"}</div>
             </div>;
           }
-          if (b.type === "figure") return <div key={b.id} id={anchor} ref={active ? ref : null} className={cls}><div className="source-image-placeholder">Image {s.image_index ?? "—"}</div><div className="small">Image {s.image_index ?? "—"}</div></div>;
+          if (b.type === "figure") return <div key={b.id} id={anchor} ref={active ? ref : null} className={cls}>{b.meta?.image_path ? <img className="source-image" alt={`Image ${s.image_index ?? ""}`} src={figureUrl(doc.document_id, String(b.meta.image_path).split(/[\\/]/).pop())} /> : <div className="source-image-placeholder">Image {s.image_index ?? "—"}</div>}<div className="small">Image {s.image_index ?? "—"}</div></div>;
           const text = textContent(b);
           const Tag = b.type === "heading" ? `h${Math.min(6, Math.max(1, b.level || 1))}` : "p";
           return <div key={b.id} id={anchor} ref={active ? ref : null} className={cls}><Tag>{text}</Tag></div>;

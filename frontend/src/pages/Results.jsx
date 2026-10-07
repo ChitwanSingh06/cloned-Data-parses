@@ -7,13 +7,13 @@ import OutputViewer from "../components/OutputViewer";
 import SearchPanel from "../components/SearchPanel";
 import SourceViewer from "../components/SourceViewer";
 import SummaryPanel from "../components/SummaryPanel";
-import { getMarkdown, getResult } from "../services/api";
+import { figureUrl, getMarkdown, getResult } from "../services/api";
 import { rememberDocument } from "../lib/recent";
 
 const STAGE_LABELS = { ingestion: "Ingestion", ocr: "OCR", layout_analysis: "Layout analysis", table_extraction: "Table extraction", assembly: "Assembly", validation: "Validation", output_generation: "Output generation" };
 const num = (v, digits) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "n/a");
 
-const TABS = [["summary", "Summary"], ["blocks", "Extracted content"], ["tables", "Tables"], ["markdown", "Markdown"], ["json", "JSON"], ["metadata", "Metadata"]];
+const TABS = [["summary", "Summary"], ["blocks", "Extracted content"], ["tables", "Tables"], ["images", "Images"], ["markdown", "Markdown"], ["json", "JSON"], ["metadata", "Metadata"]];
 
 // Structured, read-only grid for an extracted table block (cells come straight from the block).
 function TableGrid({ block }) {
@@ -38,6 +38,14 @@ function TableGrid({ block }) {
       </tbody></table>
     </div>
   );
+}
+
+// Thumbnail of a detected image, served from the existing figures endpoint (real extracted file only).
+const figName = (b) => (b.meta?.image_path ? String(b.meta.image_path).split(/[\\/]/).pop() : null);
+function Thumb({ docId, block }) {
+  const name = figName(block);
+  if (!name) return <div className="thumb thumb-missing">No image file</div>;
+  return <img className="thumb" loading="lazy" alt={`Detected image ${block.id}`} src={figureUrl(docId, name)} />;
 }
 
 const preview = (b) => {
@@ -83,6 +91,14 @@ export default function Results({ docId, onReset }) {
   const isUnits = doc.format === "docx" || doc.format === "pptx" || doc.format === "xlsx";
   const select = (id, pg) => { setSelectedId(id); if (pg) setPage(pg); };
   const tableBlocks = doc.blocks.filter((b) => b.type === "table");
+  const imageBlocks = doc.blocks.filter((b) => b.type === "figure");
+  const where = (b) => {
+    const src = b.provenance?.sources?.[0] || b.meta || {};
+    if (doc.format === "pptx") return `Slide ${src.slide_number ?? b.page}`;
+    if (doc.format === "xlsx") return `${src.worksheet || "Worksheet"}${src.cell ? ` · ${src.cell}` : ""}`;
+    if (doc.format === "docx") return `Image ${src.image_index ?? "—"}`;
+    return `Page ${b.page}`;
+  };
 
   return (
     <div className="results">
@@ -134,7 +150,8 @@ export default function Results({ docId, onReset }) {
                 {doc.blocks.map((b) => (
                   <li key={b.id} className={`${b.id === selectedId ? "sel" : ""} ${b.status === "REVIEW_REQUIRED" ? "review" : ""}`}
                       onClick={() => { setSelectedId(b.id); setPage(b.page); }}>
-                    <div className="block-head"><span className="label">{b.id} · {b.type} · {isUnits ? `logical unit ${b.page}` : `p.${b.page}`}</span> <ConfidenceBadge confidence={b.confidence} level={b.confidence_level} status={b.status} /></div>
+                    <div className="block-head"><span className="label">{b.id} · {b.type} · {isUnits ? `logical unit ${b.page}` : `p.${b.page}`}</span> <span>{b.type === "figure" && <span className="pill image-pill">Image</span>}<ConfidenceBadge confidence={b.confidence} level={b.confidence_level} status={b.status} /></span></div>
+                    {b.type === "figure" && <Thumb docId={docId} block={b} />}
                     <div className="preview">{preview(b)}</div>
                   </li>
                 ))}
@@ -151,6 +168,21 @@ export default function Results({ docId, onReset }) {
                   ))}
                 </ul>
               ) : <p className="small">No tables were extracted from this document.</p>
+            )}
+            {tab === "images" && (
+              imageBlocks.length ? (
+                <ul className="image-grid">
+                  {imageBlocks.map((b) => (
+                    <li key={b.id} className={`${b.id === selectedId ? "sel" : ""} ${b.status === "REVIEW_REQUIRED" ? "review" : ""}`} onClick={() => { setSelectedId(b.id); setPage(b.page); }}>
+                      <Thumb docId={docId} block={b} />
+                      <div className="block-head"><span className="label">{where(b)}</span> <ConfidenceBadge confidence={b.confidence} level={b.confidence_level} status={b.status} /></div>
+                      {b.meta?.caption && <div className="preview">{b.meta.caption}</div>}
+                      {b.meta?.image_width_px && <div className="small">{b.meta.image_width_px}×{b.meta.image_height_px}px</div>}
+                      {b.meta?.review_reason && <div className="small warn">{b.meta.review_reason}</div>}
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="small">No images were detected in this document.</p>
             )}
             {tab === "metadata" && (
               <div className="metadata">

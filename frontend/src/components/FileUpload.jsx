@@ -44,8 +44,8 @@ export default function FileUpload({ onDone }) {
       >
         <div className="drop-ico" aria-hidden="true">↑</div>
         <h2>{file ? file.name : "Drop a document here"}</h2>
-        <p className="muted">{file ? "Ready to parse." : "or click to browse · PDF, DOCX, PPTX, XLSX"}</p>
-        <input ref={inputRef} hidden type="file" accept=".pdf,.docx,.pptx,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <p className="muted">{file ? "Ready to parse." : "or click to browse · PDF, DOCX, PPTX, XLSX, or an image (PNG, JPG, TIFF…)"}</p>
+        <input ref={inputRef} hidden type="file" accept=".pdf,.docx,.pptx,.xlsx,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.gif,image/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setFile(e.target.files?.[0] || null)} />
       </div>
       <div className="upload-actions">
         <button className="btn primary" disabled={!file || busy} onClick={run}>Parse Document</button>

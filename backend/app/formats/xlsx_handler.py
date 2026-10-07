@@ -7,6 +7,7 @@ are not invented; provenance records worksheet/range/cell coordinates instead.
 from __future__ import annotations
 
 import datetime as _dt
+import io
 import time
 import uuid
 from collections import Counter
@@ -192,6 +193,55 @@ def _sheet_heading(ws, sheet_index: int, block_id: str) -> Block:
     )
 
 
+def _sheet_images(ws, sheet_index: int, out_dir: Path, start_counter: int, image_start: int) -> tuple[list[Block], int]:
+    """Detect pictures embedded in a worksheet (drawing layer) and save each as PNG under figures/.
+
+    Returns (figure blocks, number of images seen). Position is recorded as the anchor cell, never as invented
+    PDF coordinates. An image that cannot be decoded is kept as a REVIEW_REQUIRED figure with a reason.
+    """
+    from PIL import Image as PILImage
+
+    blocks: list[Block] = []
+    images = list(getattr(ws, "_images", []) or [])
+    for n, img in enumerate(images):
+        image_index = image_start + n + 1
+        block_id = f"X{start_counter + n:04d}"
+        anchor_cell = None
+        try:
+            frm = img.anchor._from
+            anchor_cell = f"{get_column_letter(frm.col + 1)}{frm.row + 1}"
+        except Exception:
+            pass
+        meta: dict[str, Any] = {
+            "source_type": "xlsx", "worksheet": ws.title, "worksheet_index": sheet_index,
+            "image_index": image_index, "region_id": block_id,
+            **({"cell": anchor_cell, "anchor_cell": anchor_cell} if anchor_cell else {}),
+        }
+        path = None
+        try:
+            blob = img._data()
+            with PILImage.open(io.BytesIO(blob)) as im:
+                if im.mode not in ("RGB", "RGBA"):
+                    im = im.convert("RGBA")
+                fig_dir = out_dir / "figures"
+                fig_dir.mkdir(parents=True, exist_ok=True)
+                target = fig_dir / f"xlsx_image_{image_index:03d}.png"
+                im.save(target, format="PNG")
+                path = f"figures/{target.name}"
+                meta.update({"image_path": path, "image_width_px": im.width, "image_height_px": im.height})
+        except Exception as exc:
+            meta["review_reason"] = f"Embedded image could not be extracted: {exc}"
+        meta["sources"] = [{
+            "page": sheet_index, "bbox": None, "region_id": block_id, "source_type": "xlsx",
+            "worksheet": ws.title, "worksheet_index": sheet_index, **({"cell": anchor_cell} if anchor_cell else {}),
+        }]
+        blocks.append(Block(
+            id=block_id, type=BlockType.figure, content="", page=sheet_index, bbox=None,
+            extractor="openpyxl:image", meta=meta, signals={"image_extraction": 0.97 if path else 0.6},
+        ))
+    return blocks, len(images)
+
+
 def parse_xlsx(path: str, document_id: str | None = None, filename: str | None = None,
                out_root: Path | None = None) -> Document:
     """Parse XLSX into the existing canonical Document model and outputs."""
@@ -210,6 +260,7 @@ def parse_xlsx(path: str, document_id: str | None = None, filename: str | None =
         blocks: list[Block] = []
         errors: list[dict[str, Any]] = []
         counter = 0
+        image_total = 0
 
         with timer.stage("layout_analysis"):
             for sheet_index, ws in enumerate(wb.worksheets, start=1):
@@ -230,6 +281,17 @@ def parse_xlsx(path: str, document_id: str | None = None, filename: str | None =
                     # A worksheet with no values is still represented as a logical page.
                     # The sheet heading preserves the worksheet identity without inventing data.
                     pass
+
+                try:
+                    figs, seen = _sheet_images(ws, sheet_index, out_dir, counter + 1, image_total)
+                except Exception as exc:
+                    figs, seen = [], 0
+                    errors.append(make_error("PARSING_FAILED", f"Image detection failed on '{ws.title}': {exc}", severity="warning"))
+                for fb in figs:
+                    blocks.append(fb)
+                    page_blocks.append(fb.id)
+                counter += seen
+                image_total += seen
 
                 pages.append(Page(
                     page_number=sheet_index,
