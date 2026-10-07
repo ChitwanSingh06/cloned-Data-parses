@@ -1,0 +1,5 @@
+# Optional heavier OCR/layout stack (auto-selected when importable; PARSE_OCR_ENGINE=paddle|tesseract|auto)
+paddlepaddle
+paddleocr
+# Optional formula recognition (LaTeX). Without it equations are preserved + flagged REVIEW_REQUIRED.
+# pix2tex

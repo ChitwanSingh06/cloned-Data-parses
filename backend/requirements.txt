@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic>=2
+PyMuPDF>=1.24
+Pillow
+numpy
+opencv-python-headless
+pytesseract
+# dev / tests
+pytest
+httpx
+reportlab
