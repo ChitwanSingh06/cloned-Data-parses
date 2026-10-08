@@ -1,4 +1,4 @@
-export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000/api";
+VITE_API_BASE=https://cloned-data-parses.vercel.app/api
 
 async function json(response, fallback) {
   if (!response.ok) {
