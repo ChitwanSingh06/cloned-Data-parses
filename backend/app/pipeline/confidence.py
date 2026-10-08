@@ -3,6 +3,7 @@ from app.core.config import HIGH_THRESHOLD, REVIEW_THRESHOLD
 from app.models.block import Block, ConfidenceLevel, Status
 from app.models.document import Document
 from app.pipeline.failsafe import make_error
+from app.pipeline.table_consistency import add_table_consistency
 
 
 def score(signals: dict[str, float]) -> float:
@@ -19,6 +20,7 @@ def level(conf: float) -> ConfidenceLevel:
 def add_confidence(document: Document) -> Document:
     for b in document.blocks:
         _apply(b, document)
+    add_table_consistency(document)  # semantic check: do table totals add up? (PARSE_TABLE_CONSISTENCY=off disables)
     return document
 
 
